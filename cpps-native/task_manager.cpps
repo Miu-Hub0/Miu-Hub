@@ -1,0 +1,283 @@
+--[=======================================================================]--
+--  CP+* Task Manager - Quản lý công việc đơn giản
+--  Chạy: python cpps.py task_manager.cpps
+--[=======================================================================]--
+
+module task_manager
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  CLASS: Task
+-- ─────────────────────────────────────────────────────────────────────────────
+
+class Task -> {
+    id :: int = 0
+    title :: mut string = ""
+    done :: mut bool = false
+    created_at :: string = ""
+
+    ++ new <~ (task_id: int, task_title: string) -> Task ** {
+        @.id = task_id
+        @.title = task_title
+        @.done = false
+        @.created_at = "Now"
+    }
+
+    ++ toggle <~ () ** {
+        ?? @.done ** {
+            @.done = false
+        } -- else ** {
+            @.done = true
+        }
+    }
+
+    ++ display <~ () -> string ** {
+        status := "❌"
+        ?? @.done ** {
+            status = "✅"
+        }
+        <- "[{}] #{}: {}", status, @.id, @.title
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  CLASS: TaskManager
+-- ─────────────────────────────────────────────────────────────────────────────
+
+class TaskManager -> {
+    tasks :: mut List = List::new()
+    next_id :: mut int = 1
+
+    ++ add <~ (title: string) ** {
+        task := Task::new(@.next_id, title)
+        @.tasks:push(task)
+        @.next_id += 1
+        ~> io::println("✅ Đã thêm task: {}", title)
+    }
+
+    ++ list <~ () ** {
+        ?? @.tasks:len() == 0 ** {
+            ~> io::println("📭 Chưa có công việc nào!")
+            <- none
+        }
+
+        ~> io::println("📋 Danh sách công việc:")
+        ~> io::println("─" * 40)
+        <> task :: @.tasks ** {
+            ~> io::println("  {}", task:display())
+        }
+        ~> io::println("─" * 40)
+        ~> io::println("Tổng: {} công việc", @.tasks:len())
+    }
+
+    ++ toggle_task <~ (task_id: int) ** {
+        found :: mut bool = false
+        <> task :: @.tasks ** {
+            ?? task.id == task_id ** {
+                task:toggle()
+                found = true
+                status := "hoàn thành"
+                ?? task.done ** {
+                    status = "chưa hoàn thành"
+                }
+                ~> io::println("🔄 Đã chuyển task #{} sang trạng thái '{}'", task_id, status)
+                !>
+            }
+        }
+        ?? !found ** {
+            ~> io::println("❌ Không tìm thấy task #{}", task_id)
+        }
+    }
+
+    ++ delete <~ (task_id: int) ** {
+        new_list :: mut List = List::new()
+        found :: mut bool = false
+        <> task :: @.tasks ** {
+            ?? task.id == task_id ** {
+                found = true
+                ~> io::println("🗑️ Đã xóa task: {}", task.title)
+            } -- else ** {
+                new_list:push(task)
+            }
+        }
+        @.tasks = new_list
+        ?? !found ** {
+            ~> io::println("❌ Không tìm thấy task #{}", task_id)
+        }
+    }
+
+    ++ clear_all <~ () ** {
+        @.tasks = List::new()
+        @.next_id = 1
+        ~> io::println("🧹 Đã xóa tất cả công việc!")
+    }
+
+    ++ stats <~ () ** {
+        total := @.tasks:len()
+        done_count :: mut int = 0
+        <> task :: @.tasks ** {
+            ?? task.done ** {
+                done_count += 1
+            }
+        }
+        pending := total - done_count
+        ~> io::println("📊 Thống kê:")
+        ~> io::println("  Tổng: {} task", total)
+        ~> io::println("  ✅ Đã hoàn thành: {}", done_count)
+        ~> io::println("  ⏳ Chưa hoàn thành: {}", pending)
+    }
+
+    ++ show_help <~ () ** {
+        ~> io::println("╔══════════════════════════════════════════════════════════════╗")
+        ~> io::println("║  📋 CP+* Task Manager - Hướng dẫn sử dụng                   ║")
+        ~> io::println("╚══════════════════════════════════════════════════════════════╝")
+        ~> io::println()
+        ~> io::println("  add <nội dung>    - Thêm công việc mới")
+        ~> io::println("  list              - Hiển thị danh sách")
+        ~> io::println("  done <id>         - Đánh dấu task #id đã hoàn thành")
+        ~> io::println("  undo <id>         - Đánh dấu task #id chưa hoàn thành")
+        ~> io::println("  toggle <id>       - Chuyển trạng thái task #id")
+        ~> io::println("  delete <id>       - Xóa task #id")
+        ~> io::println("  clear             - Xóa tất cả task")
+        ~> io::println("  stats             - Xem thống kê")
+        ~> io::println("  help              - Hiển thị trợ giúp này")
+        ~> io::println("  exit              - Thoát chương trình")
+        ~> io::println()
+    }
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  MAIN - Vòng lặp tương tác
+-- ─────────────────────────────────────────────────────────────────────────────
+
+++ main <~ () -> int ** {
+    manager := TaskManager::new()
+
+    ~> io::println("╔══════════════════════════════════════════════════════════════╗")
+    ~> io::println("║  📋 CP+* Task Manager v1.0                                   ║")
+    ~> io::println("╚══════════════════════════════════════════════════════════════╝")
+    ~> io::println()
+    manager:show_help()
+    ~> io::println()
+
+    running :: mut bool = true
+
+    while running ** {
+        ~> io::print("📌 task> ")
+        input_line := io::input()
+        input := input_line:trim()
+
+        -- Lệnh exit
+        ?? input == "exit" ** {
+            running = false
+            ~> io::println("👋 Tạm biệt!")
+            !>
+        }
+
+        -- Lệnh help
+        ?? input == "help" ** {
+            manager:show_help()
+        } -- elif input == "?" ** {
+            manager:show_help()
+        }
+
+        -- Lệnh list
+        ?? input == "list" ** {
+            manager:list()
+        } -- elif input == "ls" ** {
+            manager:list()
+        }
+
+        -- Lệnh clear
+        ?? input == "clear" ** {
+            manager:clear_all()
+        }
+
+        -- Lệnh stats
+        ?? input == "stats" ** {
+            manager:stats()
+        }
+
+        -- Lệnh add
+        ?? input:starts_with("add ") ** {
+            title := input:replace("add ", ""):trim()
+            ?? title:len() > 0 ** {
+                manager:add(title)
+            } -- else ** {
+                ~> io::println("❌ Vui lòng nhập nội dung task!")
+            }
+        }
+
+        -- Lệnh done
+        ?? input:starts_with("done ") ** {
+            parts := input:split(" ")
+            ?? parts:len() > 1 ** {
+                id_str := parts:get(1)
+                id := to_int(id_str)
+                ?? id != none && id > 0 ** {
+                    manager:toggle_task(id)
+                } -- else ** {
+                    ~> io::println("❌ ID không hợp lệ!")
+                }
+            } -- else ** {
+                ~> io::println("❌ Cần cung cấp ID task!")
+            }
+        }
+
+        -- Lệnh undo
+        ?? input:starts_with("undo ") ** {
+            parts := input:split(" ")
+            ?? parts:len() > 1 ** {
+                id_str := parts:get(1)
+                id := to_int(id_str)
+                ?? id != none && id > 0 ** {
+                    manager:toggle_task(id)
+                } -- else ** {
+                    ~> io::println("❌ ID không hợp lệ!")
+                }
+            } -- else ** {
+                ~> io::println("❌ Cần cung cấp ID task!")
+            }
+        }
+
+        -- Lệnh toggle
+        ?? input:starts_with("toggle ") ** {
+            parts := input:split(" ")
+            ?? parts:len() > 1 ** {
+                id_str := parts:get(1)
+                id := to_int(id_str)
+                ?? id != none && id > 0 ** {
+                    manager:toggle_task(id)
+                } -- else ** {
+                    ~> io::println("❌ ID không hợp lệ!")
+                }
+            } -- else ** {
+                ~> io::println("❌ Cần cung cấp ID task!")
+            }
+        }
+
+        -- Lệnh delete
+        ?? input:starts_with("delete ") ** {
+            parts := input:split(" ")
+            ?? parts:len() > 1 ** {
+                id_str := parts:get(1)
+                id := to_int(id_str)
+                ?? id != none && id > 0 ** {
+                    manager:delete(id)
+                } -- else ** {
+                    ~> io::println("❌ ID không hợp lệ!")
+                }
+            } -- else ** {
+                ~> io::println("❌ Cần cung cấp ID task!")
+            }
+        }
+
+        -- Lệnh không hợp lệ
+        ?? input != "" ** {
+            ~> io::println("❌ Lệnh không hợp lệ! Gõ 'help' để xem hướng dẫn.")
+        }
+
+        ~> io::println()
+    }
+
+    <- 0
+}
